@@ -122,8 +122,9 @@ iperf_accept(struct iperf_test *test)
         }
     }
 
-    if (test->udp_ctrl_sck)
+    if (test->verbose)
 	printf("%s:%d, reading from ctrl->sck %d\n", __func__, __LINE__, test->ctrl_sck);
+
     if (test->ctrl_sck == -1) {
         /* Server free, accept new client */
         if (test->udp_ctrl_sck)
@@ -462,7 +463,18 @@ iperf_run_server(struct iperf_test *test)
         }
 	if (result > 0) {
             if (FD_ISSET(test->listener, &read_set)) {
-                if (test->state != CREATE_STREAMS) {
+		int handle = 0;
+		if (test->udp_ctrl_sck) {
+                    if (test->state != CREATE_STREAMS &&
+				test->state != TEST_RUNNING &&
+				test->state != DISPLAY_RESULTS)
+			handle = 1;
+		} else {
+			handle = (test->state != CREATE_STREAMS) ? 1 : 0;
+		}
+                if (handle) {
+                    if (test->verbose)
+			printf("%s:%d test->state %d\n", __func__, __LINE__, test->state);
                     if (iperf_accept(test) < 0) {
 			cleanup_server(test);
                         return -1;
