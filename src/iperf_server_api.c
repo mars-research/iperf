@@ -68,8 +68,12 @@
 int
 iperf_server_listen(struct iperf_test *test)
 {
+    unsigned proto = Ptcp;
+    if (test->udp_ctrl_sck)
+           proto = Pudp;
+
     retry:
-    if((test->listener = netannounce(test->settings->domain, Ptcp, test->bind_address, test->server_port)) < 0) {
+    if((test->listener = netannounce(test->settings->domain, proto, test->bind_address, test->server_port)) < 0) {
 	if (errno == EAFNOSUPPORT && (test->settings->domain == AF_INET6 || test->settings->domain == AF_UNSPEC)) {
 	    /* If we get "Address family not supported by protocol", that
 	    ** probably means we were compiled with IPv6 but the running
@@ -105,20 +109,39 @@ int
 iperf_accept(struct iperf_test *test)
 {
     int s;
+    int ret;
     signed char rbuf = ACCESS_DENIED;
     socklen_t len;
     struct sockaddr_storage addr;
 
-    len = sizeof(addr);
-    if ((s = accept(test->listener, (struct sockaddr *) &addr, &len)) < 0) {
-        i_errno = IEACCEPT;
-        return -1;
+    if (!test->udp_ctrl_sck) {
+        len = sizeof(addr);
+        if ((s = accept(test->listener, (struct sockaddr *) &addr, &len)) < 0) {
+            i_errno = IEACCEPT;
+            return -1;
+        }
     }
 
+    if (test->udp_ctrl_sck)
+	printf("%s:%d, reading from ctrl->sck %d\n", __func__, __LINE__, test->ctrl_sck);
     if (test->ctrl_sck == -1) {
         /* Server free, accept new client */
-        test->ctrl_sck = s;
-        if (Nread(test->ctrl_sck, test->cookie, COOKIE_SIZE, Ptcp) < 0) {
+        if (test->udp_ctrl_sck)
+            test->ctrl_sck = test->listener;
+        else
+            test->ctrl_sck = s;
+
+        if (test->verbose)
+            printf("%s:%d, reading from ctrl->sck %d\n", __func__, __LINE__, test->ctrl_sck);
+
+        if (test->udp_ctrl_sck) {
+            test->client_addr_len = sizeof(struct sockaddr_storage);
+            ret = NreadUdp(test->ctrl_sck, test->cookie, COOKIE_SIZE, 0, (struct sockaddr*) &(test->client_addr), &test->client_addr_len);
+	} else {
+            ret = Nread(test->ctrl_sck, test->cookie, COOKIE_SIZE, Ptcp);
+        }
+
+        if (ret < 0) {
             i_errno = IERECVCOOKIE;
             return -1;
         }
@@ -139,7 +162,8 @@ iperf_accept(struct iperf_test *test)
 	 * Don't try to read from the socket.  It could block an ongoing test. 
 	 * Just send ACCESS_DENIED.
 	 */
-        if (Nwrite(s, (char*) &rbuf, sizeof(rbuf), Ptcp) < 0) {
+	printf("%s:%d, reading from ctrl->sck %d\n", __func__, __LINE__, test->ctrl_sck);
+        if (Nwrite(s, (char*) &rbuf, sizeof(rbuf), Ptcp) < 1) {
             i_errno = IESENDMESSAGE;
             return -1;
         }

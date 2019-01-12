@@ -36,6 +36,8 @@
 #include <sys/select.h>
 #include <sys/uio.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 #include "iperf.h"
 #include "iperf_api.h"
@@ -234,6 +236,8 @@ iperf_handle_message_client(struct iperf_test *test)
 
     /*!!! Why is this read() and not Nread()? */
     if ((rval = read(test->ctrl_sck, (char*) &test->state, sizeof(signed char))) <= 0) {
+        printf("%s:%d, NreadUdpi (sock_fd %d) failed %d\n", __func__, __LINE__, test->ctrl_sck, errno);
+	perror("read:");
         if (rval == 0) {
             i_errno = IECTRLCLOSE;
             return -1;
@@ -315,28 +319,39 @@ iperf_handle_message_client(struct iperf_test *test)
 }
 
 
-
 /* iperf_connect -- client to server connection function */
 int
 iperf_connect(struct iperf_test *test)
 {
+    unsigned proto = Ptcp;
+
     FD_ZERO(&test->read_set);
     FD_ZERO(&test->write_set);
 
     make_cookie(test->cookie);
 
+    if (test->udp_ctrl_sck)
+        proto = Pudp;
+
     /* Create and connect the control channel */
     if (test->ctrl_sck < 0)
 	// Create the control channel using an ephemeral port
-	test->ctrl_sck = netdial(test->settings->domain, Ptcp, test->bind_address, 0, test->server_hostname, test->server_port, test->settings->connect_timeout);
+	test->ctrl_sck = netdial(test->settings->domain, proto, test->bind_address, 0, test->server_hostname, test->server_port, test->settings->connect_timeout);
+
+    if (test->verbose)
+        printf("%s, creating control socket %d for bind addr %s\n", __func__, test->ctrl_sck, test->bind_address);
+
     if (test->ctrl_sck < 0) {
         i_errno = IECONNECT;
         return -1;
     }
 
+    if (test->verbose)
+        printf("%s:%d writing cookie to ctrl_sck %d\n", __func__, __LINE__, test->ctrl_sck);
+
     if (Nwrite(test->ctrl_sck, test->cookie, COOKIE_SIZE, Ptcp) < 0) {
         i_errno = IESENDCOOKIE;
-        return -1;
+        return 0;
     }
 
     FD_SET(test->ctrl_sck, &test->read_set);
@@ -425,6 +440,8 @@ iperf_client_end(struct iperf_test *test)
     /* show final summary */
     test->reporter_callback(test);
 
+    if (test->verbose)
+        printf("%s:%d sending IPERF_DONE\n", __func__, __LINE__);
     if (iperf_set_send_state(test, IPERF_DONE) != 0)
         return -1;
 
@@ -485,6 +502,7 @@ iperf_run_client(struct iperf_test * test)
 	if (result > 0) {
 	    if (FD_ISSET(test->ctrl_sck, &read_set)) {
  	        if (iperf_handle_message_client(test) < 0) {
+		    printf("%s:%d iperf_handle_message_client failed\n", __func__, __LINE__);
 		    return -1;
 		}
 		FD_CLR(test->ctrl_sck, &read_set);
@@ -536,6 +554,8 @@ iperf_run_client(struct iperf_test * test)
 		test->done = 1;
 		cpu_util(test->cpu_util);
 		test->stats_callback(test);
+		if (test->verbose)
+		    printf("%s:%d, setting state to TEST_END\n", __func__, __LINE__);
 		if (iperf_set_send_state(test, TEST_END) != 0)
 		    return -1;
 	    }

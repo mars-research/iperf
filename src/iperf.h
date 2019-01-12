@@ -226,6 +226,7 @@ struct xbind_entry {
 struct iperf_test
 {
     char      role;                             /* 'c' lient or 's' erver */
+    int       udp_ctrl_sck;
     int       sender;                           /* client & !reverse or server & reverse */
     int       sender_has_retransmits;
     struct protocol *protocol;
@@ -253,6 +254,8 @@ struct iperf_test
     FILE     *outfile;
 
     int       ctrl_sck;
+    struct    sockaddr_storage client_addr;
+    socklen_t client_addr_len;
     int       listener;
     int       prot_listener;
 

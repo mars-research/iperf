@@ -38,7 +38,9 @@ int setnonblocking(int fd, int nonblocking);
 int getsockdomain(int sock);
 int parse_qos(const char *tos);
 
+int NreadUdp(int fd, void *buf, size_t count, int flags, struct sockaddr *src_addr, socklen_t *addrlen);
+int NwriteUdp(int fd, const char *buf, size_t count, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
+
 #define NET_SOFTERROR -1
 #define NET_HARDERROR -2
-
 #endif /* __NET_H */

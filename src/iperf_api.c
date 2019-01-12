@@ -637,6 +637,7 @@ iperf_parse_arguments(struct iperf_test *test, int argc, char **argv)
         {"version", no_argument, NULL, 'v'},
         {"server", no_argument, NULL, 's'},
         {"client", required_argument, NULL, 'c'},
+        {"udpctrlsck", no_argument, NULL, 'U'},
         {"udp", no_argument, NULL, 'u'},
         {"bitrate", required_argument, NULL, 'b'},
         {"bandwidth", required_argument, NULL, 'b'},
@@ -710,7 +711,7 @@ iperf_parse_arguments(struct iperf_test *test, int argc, char **argv)
     char *client_username = NULL, *client_rsa_public_key = NULL;
 #endif /* HAVE_SSL */
 
-    while ((flag = getopt_long(argc, argv, "p:f:i:D1VJvsc:ub:t:n:k:l:P:Rw:B:M:N46S:L:ZO:F:A:T:C:dI:hX:", longopts, NULL)) != -1) {
+    while ((flag = getopt_long(argc, argv, "p:f:i:D1VJvsc:Uub:t:n:k:l:P:Rw:B:M:N46S:L:ZO:F:A:T:C:dI:hX:", longopts, NULL)) != -1) {
         switch (flag) {
             case 'p':
                 test->server_port = atoi(optarg);
@@ -777,6 +778,9 @@ iperf_parse_arguments(struct iperf_test *test, int argc, char **argv)
                 }
 		iperf_set_test_role(test, 'c');
 		iperf_set_test_server_hostname(test, optarg);
+                break;
+            case 'U':
+		test->udp_ctrl_sck = 1;
                 break;
             case 'u':
                 set_protocol(test, Pudp);
@@ -1171,9 +1175,25 @@ iperf_parse_arguments(struct iperf_test *test, int argc, char **argv)
 int
 iperf_set_send_state(struct iperf_test *test, signed char state)
 {
+    int ret = 0;
     test->state = state;
-    if (Nwrite(test->ctrl_sck, (char*) &state, sizeof(state), Ptcp) < 0) {
+
+    if (test->verbose) {
+        printf("%s:%d, writing to ctrl->sck %d\n", __func__, __LINE__, test->ctrl_sck);
+        printf("%s:%d, client_addr_len %d\n", __func__, __LINE__,  test->client_addr_len);
+    }
+
+    if (test->role == 'c')
+        ret = Nwrite(test->ctrl_sck, (char*) &state, sizeof(state), Ptcp);
+    else if (test->role == 's') {
+	if (test->udp_ctrl_sck)
+	    ret = NwriteUdp(test->ctrl_sck, (char*) &state, sizeof(state), 0, (struct sockaddr*) &(test->client_addr), test->client_addr_len);
+	else
+            ret = Nwrite(test->ctrl_sck, (char*) &state, sizeof(state), Ptcp);
+    }
+    if (ret < 0) {
 	i_errno = IESENDMESSAGE;
+	perror("send:");
 	return -1;
     }
     return 0;

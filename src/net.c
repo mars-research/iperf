@@ -195,6 +195,7 @@ netdial(int domain, int proto, char *local, int local_port, char *server, int po
     }
 
     ((struct sockaddr_in *) server_res->ai_addr)->sin_port = htons(port);
+
     if (timeout_connect(s, (struct sockaddr *) server_res->ai_addr, server_res->ai_addrlen, timeout) < 0 && errno != EINPROGRESS) {
 	saved_errno = errno;
 	close(s);
@@ -202,7 +203,6 @@ netdial(int domain, int proto, char *local, int local_port, char *server, int po
 	errno = saved_errno;
         return -1;
     }
-
     freeaddrinfo(server_res);
     return s;
 }
@@ -330,6 +330,28 @@ Nread(int fd, char *buf, size_t count, int prot)
     return count - nleft;
 }
 
+int
+NreadUdp(int fd, void *buf, size_t count, int flags,
+                 struct sockaddr *src_addr, socklen_t *addrlen)
+{
+    register ssize_t r;
+    register size_t nleft = count;
+
+    while (nleft > 0) {
+        r = recvfrom(fd, buf, nleft, 0, src_addr, addrlen);
+        if (r < 0) {
+            if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+                break;
+            else
+                return NET_HARDERROR;
+        } else if (r == 0)
+            break;
+
+        nleft -= r;
+        buf += r;
+    }
+    return count - nleft;
+}
 
 /*
  *                      N W R I T E
@@ -360,6 +382,44 @@ Nwrite(int fd, const char *buf, size_t count, int prot)
 	    }
 	} else if (r == 0)
 	    return NET_SOFTERROR;
+	nleft -= r;
+	buf += r;
+    }
+    return count;
+}
+
+
+//n = sendto(sockfd, buf, strlen(buf), 0, &serveraddr, serverlen);
+int
+NwriteUdp(int fd, const char *buf, size_t count, int flags, const struct sockaddr *dest_addr, socklen_t addrlen)
+{
+    register ssize_t r;
+    register size_t nleft = count;
+
+    while (nleft > 0) {
+	r = sendto(fd, buf, nleft, 0, dest_addr, addrlen);
+	if (r < 0) {
+	    switch (errno) {
+		case EINTR:
+		case EAGAIN:
+#if (EAGAIN != EWOULDBLOCK)
+		case EWOULDBLOCK:
+#endif
+		printf("%s, err code %ld\n", __func__, count - nleft);
+		return count - nleft;
+
+		case ENOBUFS:
+		printf("%s, NET_SOFTERROR err code %d\n", __func__, NET_SOFTERROR);
+		return NET_SOFTERROR;
+
+		default:
+		printf("%s, NET_HARDERROR err code %d | sendto ret %d\n", __func__, NET_HARDERROR, errno);
+		return NET_HARDERROR;
+	    }
+	} else if (r == 0) {
+	    printf("%s, 2: NET_SOFTERROR err code %d\n", __func__, NET_SOFTERROR);
+	    return NET_SOFTERROR;
+	}
 	nleft -= r;
 	buf += r;
     }
