@@ -93,7 +93,7 @@ static int send_results(struct iperf_test *test);
 static int get_results(struct iperf_test *test);
 static int diskfile_send(struct iperf_stream *sp);
 static int diskfile_recv(struct iperf_stream *sp);
-static int JSON_write(int fd, cJSON *json);
+static int JSON_write(struct iperf_test *test, cJSON *json);
 static void print_interval_results(struct iperf_test *test, struct iperf_stream *sp, cJSON *json_interval_streams);
 static cJSON *JSON_read(int fd);
 
@@ -1539,7 +1539,7 @@ send_parameters(struct iperf_test *test)
 	    printf("send_parameters:\n%s\n", cJSON_Print(j));
 	}
 
-	if (JSON_write(test->ctrl_sck, j) < 0) {
+	if (JSON_write(test, j) < 0) {
 	    i_errno = IESENDPARAMS;
 	    r = -1;
 	}
@@ -1719,7 +1719,7 @@ send_results(struct iperf_test *test)
 	    if (r == 0 && test->debug) {
 		printf("send_results\n%s\n", cJSON_Print(j));
 	    }
-	    if (r == 0 && JSON_write(test->ctrl_sck, j) < 0) {
+	    if (r == 0 && JSON_write(test, j) < 0) {
 		i_errno = IESENDRESULTS;
 		r = -1;
 	    }
@@ -1887,11 +1887,12 @@ get_results(struct iperf_test *test)
 /*************************************************************/
 
 static int
-JSON_write(int fd, cJSON *json)
+JSON_write(struct iperf_test *test, cJSON *json)
 {
     uint32_t hsize, nsize;
     char *str;
     int r = 0;
+    int fd = test->ctrl_sck;
 
     str = cJSON_PrintUnformatted(json);
     if (str == NULL)
@@ -1899,12 +1900,22 @@ JSON_write(int fd, cJSON *json)
     else {
 	hsize = strlen(str);
 	nsize = htonl(hsize);
-	if (Nwrite(fd, (char*) &nsize, sizeof(nsize), Ptcp) < 0)
-	    r = -1;
-	else {
-	    if (Nwrite(fd, str, hsize, Ptcp) < 0)
-		r = -1;
+
+        if (test->verbose)
+            printf("%s:%d writing to fd %d\n", __func__, __LINE__, fd);
+
+	if (test->role == 's' && test->udp_ctrl_sck) {
+	        r = NwriteUdp(test->ctrl_sck, (char*) &nsize, sizeof(nsize), 0,
+			(struct sockaddr*) &(test->client_addr), test->client_addr_len);
+		r = r < 0 ? -1 :
+		    NwriteUdp(test->ctrl_sck, str, hsize, 0,
+			(struct sockaddr*) &(test->client_addr), test->client_addr_len);
+	} else {
+		r = Nwrite(fd, (char*) &nsize, sizeof(nsize), Ptcp);
+		r = r < 0 ? -1 :
+			Nwrite(fd, str, hsize, Ptcp);
 	}
+
 	free(str);
     }
     return r;
