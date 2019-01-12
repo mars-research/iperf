@@ -576,7 +576,10 @@ iperf_on_connect(struct iperf_test *test)
 	}
     } else {
         len = sizeof(sa);
-        getpeername(test->ctrl_sck, (struct sockaddr *) &sa, &len);
+	if (test->udp_ctrl_sck)
+		sa = test->client_addr;
+	else
+	        getpeername(test->ctrl_sck, (struct sockaddr *) &sa, &len);
         if (getsockdomain(test->ctrl_sck) == AF_INET) {
 	    sa_inP = (struct sockaddr_in *) &sa;
             inet_ntop(AF_INET, &sa_inP->sin_addr, ipr, sizeof(ipr));
