@@ -227,6 +227,7 @@ struct iperf_test
 {
     char      role;                             /* 'c' lient or 's' erver */
     int       udp_ctrl_sck;
+    int       skip_select;
     int       sender;                           /* client & !reverse or server & reverse */
     int       sender_has_retransmits;
     struct protocol *protocol;

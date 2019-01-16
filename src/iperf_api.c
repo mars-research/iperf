@@ -641,6 +641,7 @@ iperf_parse_arguments(struct iperf_test *test, int argc, char **argv)
         {"server", no_argument, NULL, 's'},
         {"client", required_argument, NULL, 'c'},
         {"udpctrlsck", no_argument, NULL, 'U'},
+        {"skipselect", no_argument, NULL, 'x'},
         {"udp", no_argument, NULL, 'u'},
         {"bitrate", required_argument, NULL, 'b'},
         {"bandwidth", required_argument, NULL, 'b'},
@@ -714,7 +715,7 @@ iperf_parse_arguments(struct iperf_test *test, int argc, char **argv)
     char *client_username = NULL, *client_rsa_public_key = NULL;
 #endif /* HAVE_SSL */
 
-    while ((flag = getopt_long(argc, argv, "p:f:i:D1VJvsc:Uub:t:n:k:l:P:Rw:B:M:N46S:L:ZO:F:A:T:C:dI:hX:", longopts, NULL)) != -1) {
+    while ((flag = getopt_long(argc, argv, "p:f:i:D1VJvsc:Uxub:t:n:k:l:P:Rw:B:M:N46S:L:ZO:F:A:T:C:dI:hX:", longopts, NULL)) != -1) {
         switch (flag) {
             case 'p':
                 test->server_port = atoi(optarg);
@@ -784,6 +785,9 @@ iperf_parse_arguments(struct iperf_test *test, int argc, char **argv)
                 break;
             case 'U':
 		test->udp_ctrl_sck = 1;
+                break;
+            case 'x':
+		test->skip_select = 1;
                 break;
             case 'u':
                 set_protocol(test, Pudp);
@@ -1241,6 +1245,8 @@ iperf_send(struct iperf_test *test, fd_set *write_setP)
 	    gettimeofday(&now, NULL);
 	streams_active = 0;
 	SLIST_FOREACH(sp, &test->streams, streams) {
+	    if (test->skip_select && sp->green_light)
+		FD_SET(sp->socket, write_setP);
 	    if ((sp->green_light &&
 		 (write_setP == NULL || FD_ISSET(sp->socket, write_setP)))) {
 		if ((r = sp->snd(sp)) < 0) {

@@ -246,7 +246,7 @@ iperf_handle_message_client(struct iperf_test *test)
             return -1;
         }
     }
-
+    printf("%s:%d test->state %d\n", __func__, __LINE__, test->state);
     switch (test->state) {
         case PARAM_EXCHANGE:
             if (iperf_exchange_parameters(test) < 0)
@@ -457,6 +457,7 @@ int
 iperf_run_client(struct iperf_test * test)
 {
     int startup;
+    int do_select = 1;
     int result = 0;
     fd_set read_set, write_set;
     struct timeval now;
@@ -490,6 +491,8 @@ iperf_run_client(struct iperf_test * test)
 
     startup = 1;
     while (test->state != IPERF_DONE) {
+	/* Call select only if do_select is set */
+	if (do_select) {
 	memcpy(&read_set, &test->read_set, sizeof(fd_set));
 	memcpy(&write_set, &test->write_set, sizeof(fd_set));
 	(void) gettimeofday(&now, NULL);
@@ -508,11 +511,17 @@ iperf_run_client(struct iperf_test * test)
 		FD_CLR(test->ctrl_sck, &read_set);
 	    }
 	}
+	} //if
 
 	if (test->state == TEST_RUNNING) {
-
 	    /* Is this our first time really running? */
 	    if (startup) {
+		if (test->verbose)
+			printf("%s:%d setting do_select to 0\n", __func__, __LINE__);
+		/* clear do_select flag. We have started the test */
+		if (test->skip_select)
+			do_select = 0;
+
 	        startup = 0;
 
 		// Set non-blocking for non-UDP tests
@@ -552,6 +561,12 @@ iperf_run_client(struct iperf_test * test)
 
 		/* Yes, done!  Send TEST_END. */
 		test->done = 1;
+		/*
+		 * restore do_select when state is TEST_END. We need to exchange results.
+		 * select is needed for that
+		 */
+		if (test->skip_select)
+			do_select = 1;
 		cpu_util(test->cpu_util);
 		test->stats_callback(test);
 		if (test->verbose)
